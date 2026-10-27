@@ -1,0 +1,57 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: support-ticket-service
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/helpflow_db}
+    username: ${SPRING_DATASOURCE_USERNAME:helpflow}
+    password: ${SPRING_DATASOURCE_PASSWORD:helpflow_secret}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+        default_batch_fetch_size: 20
+        jdbc:
+          batch_size: 25
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+
+dispatch:
+  service:
+    url: ${DISPATCH_SERVICE_URL:http://localhost:8081}
+
+jwt:
+  secret: ${JWT_SECRET:helpflow-super-secret-jwt-signing-key-for-production-grade-security-at-least-256-bits!}
+  expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+
+sla:
+  check:
+    cron: ${SLA_CHECK_CRON:0 */5 * * * *}
+    threshold-minutes: ${SLA_THRESHOLD_MINUTES:30}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+    prometheus:
+      enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+logging:
+  pattern:
+    level: "%5p [${spring.application.name:},%X{traceId:-}]"

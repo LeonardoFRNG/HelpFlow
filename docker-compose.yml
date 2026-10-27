@@ -1,0 +1,76 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: helpflow-db
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-helpflow_db}
+      POSTGRES_USER: ${POSTGRES_USER:-helpflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-helpflow_secret}
+    ports:
+      - "${DB_PORT:-5434}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-helpflow} -d ${POSTGRES_DB:-helpflow_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - helpflow-network
+
+  technician-dispatch-service:
+    build:
+      context: .
+      dockerfile: technician-dispatch-service/Dockerfile
+    container_name: helpflow-dispatch-service
+    restart: on-failure
+    ports:
+      - "${DISPATCH_PORT:-8081}:8081"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/actuator/health | grep -q '\"status\":\"UP\"' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - helpflow-network
+
+  support-ticket-service:
+    build:
+      context: .
+      dockerfile: support-ticket-service/Dockerfile
+    container_name: helpflow-ticket-service
+    restart: on-failure
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-helpflow_db}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-helpflow}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-helpflow_secret}
+      DISPATCH_SERVICE_URL: http://technician-dispatch-service:8081
+      JWT_SECRET: ${JWT_SECRET:-helpflow-super-secret-jwt-signing-key-for-production-grade-security-at-least-256-bits!}
+      JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-86400000}
+      SLA_CHECK_CRON: ${SLA_CHECK_CRON:-0 */5 * * * *}
+      SLA_THRESHOLD_MINUTES: ${SLA_THRESHOLD_MINUTES:-30}
+    depends_on:
+      db:
+        condition: service_healthy
+      technician-dispatch-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q '\"status\":\"UP\"' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - helpflow-network
+
+volumes:
+  postgres_data:
+    name: helpflow_postgres_data
+
+networks:
+  helpflow-network:
+    name: helpflow-network

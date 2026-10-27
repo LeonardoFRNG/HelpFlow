@@ -1,0 +1,59 @@
+# ==========================================
+# HelpFlow — .gitignore
+# ==========================================
+
+# 1. Maven Build & Compiled Outputs
+target/
+**/target/
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+
+# 2. Sensitive Configuration & Secrets
+# Keep .env.example tracked, ignore actual runtime secrets
+.env
+*.env.local
+*.env.*.local
+
+# 3. Logs & Observability output
+*.log
+logs/
+**/logs/
+test-containers-*.log
+
+# 4. IDE & Editor Specific Metadata
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+*.sublime-project
+*.sublime-workspace
+.project
+.classpath
+.settings/
+bin/
+out/
+
+# 5. OS Generated Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# 6. Archive and Distribution Bundles
+*.zip
+*.tar.gz
+*.rar
+helpflow_entregable.zip
+
+# 7. Temporary & Crash Files
+*.tmp
+*.bak
+*.swp
+*~

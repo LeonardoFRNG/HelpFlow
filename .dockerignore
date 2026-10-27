@@ -1,0 +1,10 @@
+**/.git
+**/.gitignore
+**/target
+**/.idea
+**/*.iml
+**/.vscode
+**/.gemini
+**/docs
+**/*.md
+**/*.pdf
