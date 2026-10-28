@@ -1,287 +1,346 @@
-# HelpFlow — IT Support Ticket Management System
+# HelpFlow — Sistema de Gestión de Tickets de Soporte TI
 
 [![Java](https://img.shields.io/badge/Java-21-orange.svg)](https://openjdk.org/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3.4-brightgreen.svg)](https://spring.io/projects/spring-boot)
-[![Architecture](https://img.shields.io/badge/Architecture-Hexagonal-blue.svg)]()
+[![Arquitectura](https://img.shields.io/badge/Arquitectura-Hexagonal-blue.svg)]()
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue.svg)](https://www.postgresql.org/)
-[![Docker](https://img.shields.io/badge/Docker%20Compose-Ready-blue.svg)](https://www.docker.com/)
-[![Tests](https://img.shields.io/badge/Tests-75%20Passing-success.svg)]()
-[![Coverage](https://img.shields.io/badge/JaCoCo%20Coverage->81%25-success.svg)]()
+[![Docker](https://img.shields.io/badge/Docker%20Compose-listo-blue.svg)](https://www.docker.com/)
+[![Pruebas](https://img.shields.io/badge/Pruebas-75%20exitosas-success.svg)]()
+[![Cobertura](https://img.shields.io/badge/Cobertura%20JaCoCo-81%25-success.svg)]()
 
-**HelpFlow** is a distributed IT Support Ticket Management platform engineered under **Hexagonal Architecture (Ports and Adapters)** and **Domain-Driven Design (DDD)** principles, composed of two independently executable microservices.
+**HelpFlow** es una plataforma distribuida para la gestión de incidencias de soporte TI. Está construida siguiendo los principios de **Arquitectura Hexagonal (Puertos y Adaptadores)** y **Diseño Guiado por el Dominio (DDD)**, y se compone de dos microservicios independientes.
 
-### Key Capabilities
+### Funcionalidades principales
 
-- Incident reporting and lifecycle orchestration governed by a domain state machine.
-- Automated SLA deadline computation based on priority policies.
-- Deterministic technician allocation via independent dispatch microservice with local fallback resilience.
-- Automated scheduled escalation engine for tickets approaching SLA breach.
-- Stateless JWT authentication and Role-Based Access Control (RBAC).
-- Full observability through structured logging with MDC correlation IDs (`traceId`) and Micrometer metrics.
-
----
-
-## Table of Contents
-
-1. [Architecture Overview](#1-architecture-overview)
-2. [Microservices Architecture](#2-microservices-architecture)
-3. [Ticket Lifecycle & State Machine](#3-ticket-lifecycle--state-machine)
-4. [SLA Management & Escalation Engine](#4-sla-management--escalation-engine)
-5. [Database Model & Flyway Migrations](#5-database-model--flyway-migrations)
-6. [API Reference & Swagger](#6-api-reference--swagger)
-7. [Security & Authentication Model](#7-security--authentication-model)
-8. [Observability & Metrics](#8-observability--metrics)
-9. [Prerequisites & Local Execution](#9-prerequisites--local-execution)
-10. [Docker Compose Deployment](#10-docker-compose-deployment)
-11. [Testing & Quality Assurance](#11-testing--quality-assurance)
-12. [Postman Test Collection](#12-postman-test-collection)
-13. [Verified Execution Evidence](#13-verified-execution-evidence)
+- Registro y seguimiento de incidencias con ciclo de vida controlado por una máquina de estados.
+- Cálculo automático de plazos de SLA según la prioridad del ticket.
+- Asignación determinista de técnicos mediante un microservicio de despacho, con mecanismo de respaldo local.
+- Escalamiento automático de tickets en riesgo de incumplir su SLA.
+- Autenticación JWT sin estado y control de acceso basado en roles (RBAC).
+- Observabilidad mediante logs estructurados con trazabilidad y métricas de Micrometer.
 
 ---
 
-## 1. Architecture Overview
+> [!TIP]
+> ### 🔑 Credenciales de Acceso y Datos de Prueba Iniciales
+> El sistema se inicializa automáticamente mediante las migraciones de Flyway (`V3__initial_data.sql`) con los siguientes usuarios predeterminados para pruebas inmediatas en **Swagger UI** o **Postman**:
+>
+> | Rol | Correo exacto | Contraseña | Perfil / Permisos | Variable Postman |
+> | :--- | :--- | :--- | :--- | :--- |
+> | **Administrador** | `admin@helpflow.com` | `Password123!` | Acceso total, reasignaciones y supervisión global | `{{adminToken}}` |
+> | **Usuario** | `usuario@helpflow.com` | `Password123!` | Solicitante (crea y cierra sus propios tickets) | `{{userToken}}` |
+> | **Técnico** | `tecnico@helpflow.com` | `Password123!` | Soporte técnico (atiende tickets asignados a él) | `{{techToken}}` |
+>
+> *Al iniciar sesión en Postman con cualquiera de estos usuarios, los scripts de prueba capturan y configuran automáticamente el token correspondiente.*
 
-HelpFlow implements genuine **Hexagonal Architecture (Ports and Adapters)**. The domain logic is completely isolated from frameworks, persistence technologies, and communication protocols.
+---
 
-```text
-+-----------------------------------------------------------------------------------+
-|                            INFRASTRUCTURE LAYER                                   |
-|                                                                                   |
-|   +--------------------------+             +----------------------------------+   |
-|   |   Driving Adapters       |             |        Driven Adapters           |   |
-|   | (infrastructure.adapter. |             |    (infrastructure.adapter.      |   |
-|   |         in.web)          |             |       out.persistence /          |   |
-|   |   - TicketController     |             |          out.dispatch)           |   |
-|   |   - AuthController       |             |   - TicketPersistenceAdapter     |   |
-|   |   - UserController       |             |   - UserPersistenceAdapter       |   |
-|   |   - TechnicianController |             |   - TechnicianPersistenceAdapter |   |
-|   +------------+-------------+             |   - TechnicianDispatchRestClient |   |
-|                |                           +-----------------+----------------+   |
-+----------------|---------------------------------------------|--------------------+
-                 | (invokes)                                   ^ (implements)
-+----------------|---------------------------------------------|--------------------+
-|                v                                             |                    |
-|   +--------------------------+             +-----------------+----------------+   |
-|   |       Input Ports        |             |          Output Ports            |   |
-|   |  (application.port.in)   |             |     (application.port.out)       |   |
-|   |   - CreateTicketUseCase  |             |   - TicketRepositoryPort         |   |
-|   |   - UpdateTicketStatusUC |             |   - UserRepositoryPort           |   |
-|   |   - AssignTechnicianUC   |             |   - TechnicianRepositoryPort     |   |
-|   |   - AuthenticateUserUC   |             |   - TechnicianDispatchPort       |   |
-|   |   - EscalateTicketsUC    |             |   - PasswordEncoderPort          |   |
-|   +------------+-------------+             |   - TokenServicePort             |   |
-|                |                           +-----------------+----------------+   |
-|                v                                             ^                    |
-|   +----------------------------------------------------------+----------------+   |
-|   |                  Application Services (Use Case Impls)                    |   |
-|   |                      (application.service)                                |   |
-|   |   - TicketService, AuthService, UserService, TechnicianService, SlaService|   |
-|   +---------------------------------------------------------------------------+   |
-|                                      |                                            |
-|                                      v                                            |
-|   +---------------------------------------------------------------------------+   |
-|   |                               DOMAIN LAYER                                |   |
-|   |                            (domain.model / policy)                        |   |
-|   |   - Pure POJOs: Ticket, User, Technician, Assignment, TicketHistory       |   |
-|   |   - Enums: TicketStatus, Priority, Category, Role, Availability           |   |
-|   |   - Policies: SlaPolicy, AssignmentEligibilityPolicy                      |   |
-|   |   - ZERO framework or JPA dependencies                                   |   |
-|   +---------------------------------------------------------------------------+   |
-+-----------------------------------------------------------------------------------+
+## Tabla de contenidos
+
+1. [Arquitectura](#1-arquitectura)
+2. [Microservicios](#2-microservicios)
+3. [Ciclo de vida del ticket](#3-ciclo-de-vida-del-ticket)
+4. [Gestión de SLA y escalamiento](#4-gestión-de-sla-y-escalamiento)
+5. [Modelo de datos y migraciones](#5-modelo-de-datos-y-migraciones)
+6. [Referencia de la API](#6-referencia-de-la-api)
+7. [Seguridad y autenticación](#7-seguridad-y-autenticación)
+8. [Observabilidad y métricas](#8-observabilidad-y-métricas)
+9. [Requisitos e instalación](#9-requisitos-e-instalación)
+10. [Despliegue con Docker Compose](#10-despliegue-con-docker-compose)
+11. [Pruebas y calidad](#11-pruebas-y-calidad)
+12. [Colección de Postman](#12-colección-de-postman)
+13. [Evidencia de ejecución](#13-evidencia-de-ejecución)
+
+---
+
+## 1. Arquitectura
+
+El servicio principal implementa **Arquitectura Hexagonal**: la lógica de negocio está completamente aislada de los frameworks, la tecnología de persistencia y los protocolos de comunicación. Las dependencias siempre apuntan hacia el dominio.
+
+```mermaid
+flowchart TB
+    subgraph INFRA["Capa de infraestructura"]
+        direction LR
+        IN["<b>Adaptadores de entrada</b><br/>adapter.in.web<br/>TicketController · AuthController<br/>UserController · TechnicianController"]
+        OUT["<b>Adaptadores de salida</b><br/>adapter.out.persistence · adapter.out.dispatch<br/>TicketPersistenceAdapter · UserPersistenceAdapter<br/>TechnicianPersistenceAdapter · TechnicianDispatchRestClient"]
+    end
+
+    subgraph APP["Capa de aplicación"]
+        direction LR
+        PIN["<b>Puertos de entrada</b> · port.in<br/>CreateTicketUseCase · UpdateTicketStatusUseCase<br/>AssignTechnicianUseCase · AuthenticateUserUseCase<br/>EscalateTicketsUseCase"]
+        SVC["<b>Servicios de aplicación</b> · service<br/>TicketService · AuthService · UserService<br/>TechnicianService · SlaService"]
+        POUT["<b>Puertos de salida</b> · port.out<br/>TicketRepositoryPort · UserRepositoryPort<br/>TechnicianRepositoryPort · TechnicianDispatchPort<br/>PasswordEncoderPort · TokenServicePort"]
+    end
+
+    subgraph DOM["Capa de dominio — sin dependencias de Spring ni JPA"]
+        MOD["<b>Modelos:</b> Ticket · User · Technician · Assignment · TicketHistory<br/><b>Enums:</b> TicketStatus · Priority · Category · Role · Availability<br/><b>Políticas:</b> SlaPolicy · AssignmentEligibilityPolicy"]
+    end
+
+    IN -- invoca --> PIN
+    PIN --> SVC
+    SVC --> POUT
+    OUT -. implementa .-> POUT
+    SVC --> MOD
 ```
 
-### Directory Mapping
+### Estructura de paquetes
 
 ```text
 support-ticket-service/src/main/java/com/helpflow/ticket/
-|-- domain/                               # Pure business logic (NO Spring, NO JPA)
-|   |-- model/                            # Ticket, User, Technician, Assignment, TicketHistory
-|   |-- policy/                           # SlaPolicy, AssignmentEligibilityPolicy
-|   +-- exception/                        # DomainRuleViolationException, InvalidTransitionException...
-|-- application/                          # Orchestration & Use Case abstractions
-|   |-- port/in/                          # Input port interfaces (CreateTicketUseCase, etc.)
-|   |-- port/out/                         # Output port interfaces (TicketRepositoryPort, etc.)
-|   +-- service/                          # Application services implementing input ports
-+-- infrastructure/                       # Framework, delivery, and persistence implementations
-    |-- adapter/in/web/                   # REST Controllers, DTOs, GlobalExceptionHandler
-    |-- adapter/out/persistence/          # JPA Entities, Spring Data Repositories, Entity Mappers
-    |-- adapter/out/dispatch/             # Spring RestClient adapter calling dispatch microservice
-    |-- security/                         # Spring Security 6, JwtAuthenticationFilter, TokenProvider
-    |-- metrics/                          # Micrometer metrics configuration & registration
-    |-- scheduler/                        # @Scheduled SLA Escalation background job
-    +-- config/                           # Bean wiring, Clock configuration, OpenAPI documentation
+├── domain/                        # Lógica de negocio pura (sin Spring ni JPA)
+│   ├── model/                     # Ticket, User, Technician, Assignment, TicketHistory
+│   ├── policy/                    # SlaPolicy, AssignmentEligibilityPolicy
+│   └── exception/                 # DomainRuleViolationException, InvalidTransitionException, …
+├── application/                   # Orquestación y casos de uso
+│   ├── port/in/                   # Interfaces de los puertos de entrada
+│   ├── port/out/                  # Interfaces de los puertos de salida
+│   └── service/                   # Implementaciones de los casos de uso
+└── infrastructure/                # Implementaciones técnicas
+    ├── adapter/in/web/            # Controladores REST, DTOs, GlobalExceptionHandler
+    ├── adapter/out/persistence/   # Entidades JPA, repositorios Spring Data, mappers
+    ├── adapter/out/dispatch/      # Cliente REST hacia el servicio de despacho
+    ├── security/                  # Spring Security 6, JwtAuthenticationFilter, TokenProvider
+    ├── metrics/                   # Configuración y registro de métricas Micrometer
+    ├── scheduler/                 # Tarea programada de escalamiento por SLA
+    └── config/                    # Configuración de beans, Clock y OpenAPI
 ```
 
 ---
 
-## 2. Microservices Architecture
+## 2. Microservicios
 
-HelpFlow consists of two microservices that operate as independent processes:
+El sistema está compuesto por dos microservicios que se ejecutan como procesos independientes.
 
-```text
-                      +-----------------------------+
-                      |         HTTP Client         |
-                      |   (Browser / Postman / cURL) |
-                      +--------------+--------------+
-                                     |
-                                     | Port 8080 (REST + JWT)
-                                     v
-                  +-----------------------------------+
-                  |      support-ticket-service       |
-                  |  (Hexagonal, Spring Boot, JPA)    |
-                  +---------+---------------+---------+
-                            |               |
-         PostgreSQL Port    |               | HTTP Port 8081
-         5432 (Internal)    |               | (TechnicianDispatchPort)
-                            v               v
-            +--------------------+    +-------------------------------+
-            |  PostgreSQL 16     |    |  technician-dispatch-service  |
-            |  (helpflow_db)     |    |  (Stateless, Deterministic)   |
-            +--------------------+    +-------------------------------+
+```mermaid
+flowchart TB
+    C["Cliente HTTP<br/>(navegador · Postman · cURL)"]
+    STS["<b>support-ticket-service</b><br/>Puerto 8080<br/>Hexagonal · Spring Boot · JPA"]
+    DB[("PostgreSQL 16<br/>helpflow_db<br/>Puerto 5432 (interno)")]
+    TDS["<b>technician-dispatch-service</b><br/>Puerto 8081<br/>Sin estado · Determinista"]
+
+    C -- "REST + JWT" --> STS
+    STS --> DB
+    STS -- "HTTP · TechnicianDispatchPort" --> TDS
 ```
 
-### 1. `support-ticket-service` (Port 8080)
-- Manages user profiles, corporate authentication, ticket lifecycles, technician rosters, and audit trails.
-- Uses PostgreSQL with Spring Data JPA and Flyway versioned migrations.
-- Secures all protected routes via stateless JWT Bearer authentication and role-based access control (RBAC).
-- Automatically invokes the dispatch service upon ticket creation.
-- Runs a scheduled job every 60 seconds to detect tickets approaching SLA breaches and escalates their priority.
+### `support-ticket-service` (puerto 8080)
 
-### 2. `technician-dispatch-service` (Port 8081)
-- Autonomous microservice simulating technician allocation without database or security overhead.
-- Exposes `POST /technician-dispatch`.
-- **Deterministic selection:** Uses an MD5 digest hash combining `ticketId`, `category`, and `priority` modulo 20 to consistently return the same technician and availability rating for the same input parameters.
-- Availability classification:
-  - `0 - 2 hours`: `HIGH`
-  - `3 - 8 hours`: `MEDIUM`
-  - `> 8 hours`: `LOW`
-- **Resilience:** If the dispatch service is unreachable or errors out, `support-ticket-service` falls back gracefully to local eligibility policy selection and logs a fallback assignment rather than aborting ticket creation.
+- Gestiona usuarios, autenticación corporativa, ciclo de vida de los tickets, catálogo de técnicos y auditoría.
+- Persistencia en PostgreSQL con Spring Data JPA y migraciones versionadas con Flyway.
+- Protege las rutas mediante autenticación JWT sin estado y control de acceso por roles.
+- Invoca automáticamente al servicio de despacho al crear un ticket.
+- Ejecuta cada 60 segundos una tarea que detecta tickets próximos a incumplir su SLA y eleva su prioridad.
+
+### `technician-dispatch-service` (puerto 8081)
+
+- Microservicio autónomo que simula la asignación de técnicos.
+- No depende de base de datos ni de filtros de seguridad.
+- Expone el endpoint `POST /technician-dispatch`.
+- **Selección determinista:** calcula un hash MD5 a partir de `ticketId`, `category` y `priority`, módulo 20. La misma entrada produce siempre el mismo técnico y la misma disponibilidad.
+- Clasificación de disponibilidad:
+
+  | Tiempo estimado | Disponibilidad |
+  | :--- | :--- |
+  | 0 – 2 horas | `HIGH` |
+  | 3 – 8 horas | `MEDIUM` |
+  | Más de 8 horas | `LOW` |
+
+- **Tolerancia a fallos:** si el servicio de despacho no responde o devuelve un error, `support-ticket-service` recurre a la política de elegibilidad local y registra la asignación como de respaldo, sin interrumpir la creación del ticket.
 
 ---
 
-## 3. Ticket Lifecycle & State Machine
+## 3. Ciclo de vida del ticket
 
-HelpFlow enforces a strict state machine at the domain level (`Ticket.java`). Arbitrary or out-of-order transitions are rejected with HTTP 400 Bad Request.
+La máquina de estados se aplica en la capa de dominio (`Ticket.java`). Cualquier transición no permitida se rechaza con **HTTP 400 Bad Request**.
 
-```text
-       +--------+
-       | (Init) |
-       +----+---+
-            |
-            v
-        +------+
-        | OPEN | <-----------------------+ (Auto-dispatch)
-        +---+--+                         |
-            |                            |
-            +------------+---------------+
-                         |
-                         v
-                   +----------+
-     +------------>| ASSIGNED |
-     |             +----+-----+
-     | Reassignment     |
-     | by Admin         v
-     |             +-------------+
-     +-------------| IN_PROGRESS |
-                   +----+---+----+
-                        |   |
-          Cancelled     |   | Resolved
-          by Admin/User |   v
-          +-------------+  +----------+
-          |                | RESOLVED |
-          v                +----+-----+
-    +-----------+               |
-    | CANCELLED |               v
-    +-----------+          +--------+
-                           | CLOSED |
-                           +--------+
+```mermaid
+stateDiagram-v2
+    [*] --> OPEN: Creación
+    OPEN --> ASSIGNED: Despacho automático / Admin
+    ASSIGNED --> ASSIGNED: Reasignación (Admin)
+    ASSIGNED --> IN_PROGRESS: Técnico asignado / Admin
+    IN_PROGRESS --> RESOLVED: Técnico asignado / Admin
+    RESOLVED --> CLOSED: Propietario / Admin
+    OPEN --> CANCELLED: Propietario / Admin
+    ASSIGNED --> CANCELLED: Propietario / Admin
+    IN_PROGRESS --> CANCELLED: Propietario / Admin
+    CLOSED --> [*]
+    CANCELLED --> [*]
 ```
 
-### Permitted Transitions & Invariants
+### Transiciones permitidas y reglas de negocio
 
-| From State | To State | Required Role | Mandatory Observations | Side Effects & Domain Invariants |
+| Estado origen | Estado destino | Rol requerido | Observación obligatoria | Efectos y reglas de dominio |
 | :--- | :--- | :--- | :--- | :--- |
-| *(None)* | `OPEN` | `ROLE_USUARIO`, `ROLE_ADMIN` | No | User must be active. Calculates SLA deadline based on priority. Dispatches technician. |
-| `OPEN` | `ASSIGNED` | System / `ROLE_ADMIN` | Reason required on reassignment | Selected technician must be `ACTIVE` and have matching specialty. Active ticket count incremented. |
-| `ASSIGNED` | `IN_PROGRESS` | `ROLE_TECNICO` (assigned), `ROLE_ADMIN` | Mandatory observations | Technician must be the one assigned to the ticket. |
-| `IN_PROGRESS` | `RESOLVED` | `ROLE_TECNICO` (assigned), `ROLE_ADMIN` | Mandatory resolution notes | Records resolution timestamp. Active ticket count decremented for technician. |
-| `RESOLVED` | `CLOSED` | `ROLE_ADMIN`, `ROLE_USUARIO` (ticket owner) | Mandatory closure comment | Terminal state. No further transitions allowed. |
-| `OPEN` / `ASSIGNED` / `IN_PROGRESS` | `CANCELLED` | `ROLE_ADMIN`, `ROLE_USUARIO` (ticket owner) | Mandatory cancellation reason | Terminal state. Decrements technician active ticket count if assigned. |
-| `ASSIGNED` | `ASSIGNED` | `ROLE_ADMIN` | Mandatory reassignment reason | Decrements previous technician count, increments new technician count, updates assignment record. |
+| — | `OPEN` | `ROLE_USUARIO`, `ROLE_ADMIN` | No | El usuario debe estar activo. Se calcula el plazo de SLA según la prioridad y se solicita un técnico. |
+| `OPEN` | `ASSIGNED` | Sistema, `ROLE_ADMIN` | Motivo, en caso de reasignación | El técnico debe estar `ACTIVE` y tener la especialidad correspondiente. Se incrementa su contador de tickets activos. |
+| `ASSIGNED` | `ASSIGNED` | `ROLE_ADMIN` | Motivo de reasignación | Se decrementa el contador del técnico anterior, se incrementa el del nuevo y se actualiza el registro de asignación. |
+| `ASSIGNED` | `IN_PROGRESS` | `ROLE_TECNICO` (asignado), `ROLE_ADMIN` | Sí | Solo el técnico asignado puede iniciar la atención. |
+| `IN_PROGRESS` | `RESOLVED` | `ROLE_TECNICO` (asignado), `ROLE_ADMIN` | Notas de resolución | Se registra la fecha de resolución y se decrementa el contador del técnico. |
+| `RESOLVED` | `CLOSED` | `ROLE_USUARIO` (propietario), `ROLE_ADMIN` | Comentario de cierre | Estado final. No admite más transiciones. |
+| `OPEN` / `ASSIGNED` / `IN_PROGRESS` | `CANCELLED` | `ROLE_USUARIO` (propietario), `ROLE_ADMIN` | Motivo de cancelación | Estado final. Si había técnico asignado, se decrementa su contador. |
 
 ---
 
-## 4. SLA Management & Escalation Engine
+## 4. Gestión de SLA y escalamiento
 
-SLA deadlines are computed at ticket creation using `SlaPolicy` and an injectable system `Clock`:
+El plazo de SLA se calcula al crear el ticket mediante `SlaPolicy`, que recibe un `Clock` inyectable para facilitar las pruebas.
 
-| Priority | Resolution SLA | Auto-Escalation Threshold |
+| Prioridad | Plazo de resolución | Regla de escalamiento automático |
 | :--- | :--- | :--- |
-| `CRITICAL` | **4 hours** | Already at highest priority (Alert logged) |
-| `HIGH` | **8 hours** | Within 2 hours of deadline $\rightarrow$ Escalates to `CRITICAL` |
-| `MEDIUM` | **24 hours** | Within 4 hours of deadline $\rightarrow$ Escalates to `HIGH` |
-| `LOW` | **48 hours** | Within 8 hours of deadline $\rightarrow$ Escalates to `MEDIUM` |
+| `CRITICAL` | 4 horas | Ya es la prioridad máxima; solo se registra una alerta. |
+| `HIGH` | 8 horas | A menos de 2 horas del vencimiento → `CRITICAL` |
+| `MEDIUM` | 24 horas | A menos de 4 horas del vencimiento → `HIGH` |
+| `LOW` | 48 horas | A menos de 8 horas del vencimiento → `MEDIUM` |
 
-### Escalation Scheduler
-- Implemented in `SlaEscalationScheduler.java`.
-- Runs periodically via `@Scheduled(cron = "${helpflow.sla.escalation-cron:0 * * * * *}")` (every 60 seconds by default).
-- Queries active non-terminal tickets (`OPEN`, `ASSIGNED`, `IN_PROGRESS`).
-- Evaluates `slaPolicy.shouldEscalate(ticket, now)`.
-- If eligible, escalates ticket priority, recalculates SLA deadlines, logs a `TicketHistory` entry with `actor = SYSTEM`, and persists changes transactionally.
+### Tarea de escalamiento
+
+Implementada en `SlaEscalationScheduler.java`:
+
+1. Se ejecuta periódicamente con `@Scheduled(cron = "${helpflow.sla.escalation-cron:0 * * * * *}")` (cada 60 segundos por defecto).
+2. Consulta los tickets activos (`OPEN`, `ASSIGNED`, `IN_PROGRESS`).
+3. Evalúa cada uno con `slaPolicy.shouldEscalate(ticket, now)`.
+4. Si corresponde, eleva la prioridad, recalcula el plazo de SLA, registra una entrada en `TicketHistory` con `actor = SYSTEM` y persiste los cambios en una transacción.
+5. Si el plazo ya venció, incrementa la métrica `helpflow.tickets.overdue`.
 
 ---
 
-## 5. Database Model & Flyway Migrations
+## 5. Modelo de datos y migraciones
 
-The database is managed with versioned Flyway migrations located in `support-ticket-service/src/main/resources/db/migration/`:
+El esquema se versiona con Flyway en `support-ticket-service/src/main/resources/db/migration/`:
 
-```text
-db/migration/
-|-- V1__schema.sql                   # DDL: users, technicians, tickets
-|-- V2__assignments_history_sla.sql  # DDL: assignments, ticket_histories, indexes, FK constraints
-+-- V3__initial_data.sql             # DML: 20 seed technicians, admin user, standard user, technician user
+| Migración | Contenido |
+| :--- | :--- |
+| `V1__schema.sql` | Tablas `users`, `technicians` y `tickets`. |
+| `V2__assignments_history_sla.sql` | Tablas `assignments` y `ticket_histories`, índices y claves foráneas. |
+| `V3__initial_data.sql` | Datos iniciales: 20 técnicos y usuarios de prueba (administrador, usuario y técnico). |
+
+### Diagrama entidad-relación
+
+```mermaid
+erDiagram
+    USERS ||--o{ TICKETS : "crea"
+    TECHNICIANS ||--o{ TICKETS : "atiende"
+    TICKETS ||--o{ ASSIGNMENTS : "registra"
+    TECHNICIANS ||--o{ ASSIGNMENTS : "recibe"
+    TICKETS ||--o{ TICKET_HISTORIES : "audita"
+
+    USERS {
+        BIGSERIAL id PK
+        VARCHAR full_name
+        VARCHAR email UK
+        VARCHAR password_hash
+        VARCHAR role
+        VARCHAR document_number UK
+        VARCHAR support_area
+        VARCHAR status
+    }
+    TECHNICIANS {
+        BIGSERIAL id PK
+        VARCHAR full_name
+        VARCHAR email UK
+        VARCHAR specialty
+        VARCHAR availability
+        VARCHAR status
+        INT active_tickets_count
+        VARCHAR office_location
+    }
+    TICKETS {
+        BIGSERIAL id PK
+        VARCHAR title
+        TEXT description
+        VARCHAR category
+        VARCHAR priority
+        VARCHAR status
+        BIGINT user_id FK
+        BIGINT technician_id FK "nullable"
+        VARCHAR office_location
+        VARCHAR affected_asset
+        TIMESTAMPTZ created_at
+        TIMESTAMPTZ updated_at
+        TIMESTAMPTZ sla_deadline
+        TIMESTAMPTZ resolved_at "nullable"
+    }
+    ASSIGNMENTS {
+        BIGSERIAL id PK
+        BIGINT ticket_id FK
+        BIGINT technician_id FK
+        TIMESTAMPTZ assigned_at
+        VARCHAR assigned_by
+        TEXT reason
+    }
+    TICKET_HISTORIES {
+        BIGSERIAL id PK
+        BIGINT ticket_id FK
+        VARCHAR previous_status
+        VARCHAR new_status
+        VARCHAR changed_by
+        TIMESTAMPTZ change_timestamp
+        TEXT observation
+    }
 ```
 
-### Entity Relationships
+### Prevención de consultas N+1
 
-- `users` (1) $\rightarrow$ (N) `tickets`
-- `technicians` (1) $\rightarrow$ (N) `tickets`
-- `tickets` (1) $\rightarrow$ (N) `assignments`
-- `tickets` (1) $\rightarrow$ (N) `ticket_histories`
+- Los métodos de consulta de `SpringDataTicketRepository` usan `@EntityGraph(attributePaths = {"user", "technician"})` y consultas con `JOIN FETCH`.
+- Las colecciones de `TicketJpaEntity` se modelan como `Set` (`LinkedHashSet`) para evitar `MultipleBagFetchException`.
 
 ---
 
-## 6. API Reference & Swagger
+## 6. Referencia de la API
 
-### Swagger UI (Interactive Testing)
-When the application is running, open in your browser:
-👉 **`http://localhost:8080/swagger-ui/index.html`**
+Todos los endpoints, excepto `/auth/**`, la documentación OpenAPI y Actuator, requieren un token JWT en la cabecera:
 
-- **OpenAPI 3 JSON Spec:** `http://localhost:8080/v3/api-docs`
-- **Static Exported File:** Included in the root directory as [`swagger.json`](./swagger.json).
+```http
+Authorization: Bearer <token>
+```
 
-### Endpoints Summary
+La documentación interactiva está disponible en Swagger UI: `http://localhost:8080/swagger-ui/index.html`.
 
-| Method | Endpoint | Allowed Roles | Description |
+### Autenticación
+
+| Método | Endpoint | Acceso | Descripción |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/auth/register` | Public | Register a new user (`ROLE_USUARIO`). Requires corporate `@helpflow.com` email. |
-| `POST` | `/auth/login` | Public | Authenticate user and return JWT token. |
-| `GET` | `/users/me` | Authenticated | Retrieve profile of authenticated principal. |
-| `PUT` | `/users/me` | Authenticated | Update full name and support area of authenticated principal. |
-| `GET` | `/users` | `ROLE_ADMIN` | List all system users with optional status filtering. |
-| `PATCH`| `/users/{id}/status` | `ROLE_ADMIN` | Activate or deactivate user account. |
-| `GET` | `/technicians` | Authenticated | List technicians with optional `?specialty=` and `?availability=` filters. |
-| `GET` | `/technicians/{id}` | Authenticated | Get technician details by ID. |
-| `PATCH`| `/technicians/{id}/availability` | `ROLE_ADMIN` | Update technician availability status. |
-| `POST` | `/tickets` | `ROLE_USUARIO`, `ROLE_ADMIN` | Create a ticket (auto-computes SLA and auto-dispatches). |
-| `GET` | `/tickets` | `ROLE_ADMIN` | List all tickets with optional filtering (`status`, `priority`, `category`, `overdue`). |
-| `GET` | `/tickets/my` | `ROLE_USUARIO`, `ROLE_TECNICO` | View tickets owned by requesting user or assigned to technician. |
-| `GET` | `/tickets/{id}` | Authenticated | Get ticket by ID (ownership enforced for users and technicians). |
-| `POST` | `/tickets/{id}/assign`| `ROLE_ADMIN` | Explicitly assign or reassign ticket to a technician. |
-| `PATCH`| `/tickets/{id}/status`| Authenticated | Transition ticket state (`IN_PROGRESS`, `RESOLVED`, `CLOSED`, `CANCELLED`). |
-| `POST` | `/technician-dispatch`| Public (Port 8081) | Deterministic technician dispatch algorithm service. |
+| `POST` | `/auth/register` | Público | Registra un usuario con rol `ROLE_USUARIO`. Exige un correo corporativo `@helpflow.com`. |
+| `POST` | `/auth/login` | Público | Autentica al usuario y devuelve un token JWT. |
 
-### RFC 7807 Standard Error Format (`ProblemDetail`)
+### Usuarios
+
+| Método | Endpoint | Acceso | Descripción |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/users/me` | Autenticado | Consulta el perfil del usuario autenticado. |
+| `PUT` | `/users/me` | Autenticado | Actualiza el nombre completo y el área de soporte. |
+| `GET` | `/users` | `ROLE_ADMIN` | Lista los usuarios, con filtro opcional por estado. |
+| `PATCH` | `/users/{id}/status` | `ROLE_ADMIN` | Activa o desactiva una cuenta. |
+
+### Técnicos
+
+| Método | Endpoint | Acceso | Descripción |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/technicians` | Autenticado | Lista técnicos, con filtros opcionales `?specialty=` y `?availability=`. |
+| `GET` | `/technicians/{id}` | Autenticado | Consulta el detalle de un técnico. |
+| `PATCH` | `/technicians/{id}/availability` | `ROLE_ADMIN` | Actualiza la disponibilidad de un técnico. |
+
+### Tickets
+
+| Método | Endpoint | Acceso | Descripción |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/tickets` | `ROLE_USUARIO`, `ROLE_ADMIN` | Crea un ticket; calcula el SLA y solicita la asignación automática. |
+| `GET` | `/tickets` | `ROLE_ADMIN` | Lista todos los tickets, con filtros por `status`, `priority`, `category` y `overdue`. |
+| `GET` | `/tickets/my` | `ROLE_USUARIO`, `ROLE_TECNICO` | Lista los tickets creados por el usuario o asignados al técnico. |
+| `GET` | `/tickets/{id}` | Autenticado | Consulta un ticket; se valida la pertenencia para usuarios y técnicos. |
+| `POST` | `/tickets/{id}/assign` | `ROLE_ADMIN` | Asigna o reasigna un ticket a un técnico. |
+| `PATCH` | `/tickets/{id}/status` | Autenticado | Cambia el estado (`IN_PROGRESS`, `RESOLVED`, `CLOSED`, `CANCELLED`). |
+
+### Servicio de despacho
+
+| Método | Endpoint | Acceso | Descripción |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/technician-dispatch` | Público (puerto 8081) | Algoritmo determinista de selección de técnico. |
+
+### Formato de errores (RFC 7807)
+
+Todos los errores se devuelven como `ProblemDetail` según el estándar RFC 7807, e incluyen el identificador de traza de la petición:
 
 ```json
 {
@@ -297,97 +356,189 @@ When the application is running, open in your browser:
 
 ---
 
-## 7. Security & Authentication Model
+## 7. Seguridad y autenticación
 
-### Default Accounts for Testing
+| Aspecto | Implementación |
+| :--- | :--- |
+| Firma de tokens | HMAC-SHA256 con `jjwt-api` / `jjwt-impl` 0.12.6. |
+| Sesión | Sin estado (`SessionCreationPolicy.STATELESS`). |
+| Contraseñas | Cifradas con BCrypt (factor de coste 10). |
+| Registro | Restringido a correos corporativos `*@helpflow.com`. |
+| Identidad | Se obtiene exclusivamente del `SecurityContextHolder`, lo que impide la suplantación por ID. |
+| Pertenencia de recursos | Los usuarios solo acceden a sus propios tickets; los técnicos, solo a los que tienen asignados. Los administradores tienen acceso total. |
 
-| Role | Email | Password | Profile |
-| :--- | :--- | :--- | :--- |
-| `ROLE_ADMIN` | `admin@helpflow.com` | `Password123!` | System Administrator |
-| `ROLE_TECNICO`| `tecnico@helpflow.com` | `Password123!` | Assigned Support Technician |
-| `ROLE_USUARIO`| `usuario@helpflow.com` | `Password123!` | Department User |
+### Cuentas de prueba
 
----
+Disponibles tras ejecutar las migraciones. **Solo para entornos de desarrollo.**
 
-## 8. Observability & Metrics
-
-Exposed via Actuator at `http://localhost:8080/actuator/metrics`:
-
-- `helpflow.tickets.created`: Counter of total tickets created (tagged by `priority` and `category`).
-- `helpflow.tickets.overdue`: Counter of tickets that breached SLA deadline.
-- `helpflow.tickets.first_response.time`: Timer measuring latency between ticket creation and assignment to a technician.
-- `helpflow.tickets.resolution.time`: Timer measuring total duration from creation to resolution.
-- `helpflow.auth.failures`: Counter of invalid login attempts.
-- `helpflow.auth.access_denied`: Counter of unauthorized (403) access attempts.
+| Rol | Correo | Contraseña | Perfil | Variable Postman |
+| :--- | :--- | :--- | :--- | :--- |
+| `ROLE_ADMIN` | `admin@helpflow.com` | `Password123!` | Administrador del sistema | `{{adminToken}}` |
+| `ROLE_TECNICO` | `tecnico@helpflow.com` | `Password123!` | Especialista en soporte de hardware | `{{techToken}}` |
+| `ROLE_USUARIO` | `usuario@helpflow.com` | `Password123!` | Usuario del área de Finanzas | `{{userToken}}` |
 
 ---
 
-## 9. Prerequisites & Local Execution
+## 8. Observabilidad y métricas
 
-### Prerequisites
-- JDK 21
-- Maven 3.8+
-- Docker & Docker Compose
+### Identificador de traza
 
-### Running Locally with Maven
+Cada petición HTTP pasa por `TraceIdFilter`. Si llega la cabecera `X-Trace-Id`, se reutiliza; de lo contrario, se genera un UUID. El identificador se guarda en el `MDC` de SLF4J, se devuelve en la cabecera `X-Trace-Id` de la respuesta y se incluye en todos los logs:
+
+```text
+2026-10-27T14:48:30.125Z [9b642ca8-3162-43bb-a5eb-06fceeb0ea12] INFO  c.h.t.a.s.TicketService : Ticket created with id: 1, SLA deadline: 2026-10-27T22:48:30.125Z
+```
+
+### Métricas de Micrometer
+
+Disponibles en `/actuator/metrics`:
+
+| Métrica | Tipo | Descripción |
+| :--- | :--- | :--- |
+| `helpflow.tickets.created` | Contador | Tickets creados, etiquetados por `priority` y `category`. |
+| `helpflow.tickets.overdue` | Contador | Tickets que superaron su plazo de SLA. |
+| `helpflow.tickets.first_response.time` | Temporizador | Tiempo entre la creación del ticket y su asignación. |
+| `helpflow.tickets.resolution.time` | Temporizador | Tiempo total entre la creación y la resolución. |
+| `helpflow.auth.failures` | Contador | Intentos de inicio de sesión fallidos. |
+| `helpflow.auth.access_denied` | Contador | Accesos denegados (HTTP 403). |
+
+---
+
+## 9. Requisitos e instalación
+
+### Requisitos
+
+| Herramienta | Versión |
+| :--- | :--- |
+| JDK | 21 (se recomienda Eclipse Temurin) |
+| Maven | 3.8 o superior |
+| Docker / Docker Compose | Docker 24+ y Compose v2+ |
+| PostgreSQL *(opcional, ejecución local)* | 15 o superior |
+
+### Ejecución local con Maven
+
+**1. Levantar PostgreSQL** (localmente o con Docker):
+
 ```bash
-# 1. Start PostgreSQL
-docker run --name helpflow-postgres -e POSTGRES_DB=helpflow_db -e POSTGRES_USER=helpflow_user -e POSTGRES_PASSWORD=helpflow_password -p 5434:5432 -d postgres:16-alpine
+docker run --name helpflow-postgres \
+  -e POSTGRES_DB=helpflow_db \
+  -e POSTGRES_USER=helpflow_user \
+  -e POSTGRES_PASSWORD=helpflow_password \
+  -p 5432:5432 -d postgres:16-alpine
+```
 
-# 2. Compile & package
+**2. Compilar el proyecto multimódulo:**
+
+```bash
 mvn clean package
+```
 
-# 3. Start Dispatch Service (Port 8081)
+**3. Iniciar el servicio de despacho** (puerto 8081):
+
+```bash
 mvn spring-boot:run -pl technician-dispatch-service
+```
 
-# 4. Start Support Ticket Service (Port 8080)
+**4. Iniciar el servicio de tickets** (puerto 8080), en otra terminal:
+
+```bash
 mvn spring-boot:run -pl support-ticket-service
 ```
 
+**5. Abrir Swagger UI:** `http://localhost:8080/swagger-ui/index.html`
+
 ---
 
-## 10. Docker Compose Deployment
+## 10. Despliegue con Docker Compose
+
+El archivo `docker-compose.yml` orquesta los tres contenedores del sistema.
 
 ```bash
-# Start all containers in background
-DOCKER_BUILDKIT=0 COMPOSE_PROJECT_NAME=helpflow docker compose up --build -d
+# Construir e iniciar todos los contenedores en segundo plano
+docker compose up --build -d
+```
 
-# Verify health
+### Verificar el estado
+
+```bash
 docker compose ps
 ```
 
+| Contenedor | Verificación de salud |
+| :--- | :--- |
+| `helpflow-postgres` | `pg_isready -U helpflow_user -d helpflow_db` |
+| `technician-dispatch-service` | `/actuator/health` en el puerto 8081 |
+| `support-ticket-service` | `/actuator/health` en el puerto 8080; espera a que PostgreSQL y el servicio de despacho estén saludables. |
+
+### Consultar logs
+
+```bash
+docker compose logs -f support-ticket-service
+```
+
+### Detener el sistema
+
+```bash
+docker compose down -v
+```
+
+> **Nota:** la opción `-v` elimina también los volúmenes, por lo que se perderán los datos de la base de datos.
+
 ---
 
-## 11. Testing & Quality Assurance
+## 11. Pruebas y calidad
+
+La suite automatizada cubre el dominio, las transiciones de la máquina de estados, casos límite, políticas de seguridad y flujos completos de integración. Las pruebas de integración se ejecutan contra una base de datos PostgreSQL real mediante **Testcontainers**, sin mocks de la capa de persistencia.
+
+### Ejecutar las pruebas
 
 ```bash
 mvn test
 ```
 
-### JaCoCo Code Coverage Verification
+### Resultado
 
-| Module | Line Coverage | Branch Coverage | Method Coverage | Class Coverage |
+| Módulo | Clase de prueba |
+| :--- | :--- |
+| `technician-dispatch-service` | `TechnicianDispatchApplicationTests` |
+| | `TechnicianDispatchControllerTest` |
+| | `TechnicianDispatchServiceTest` |
+| `support-ticket-service` | `SupportTicketServiceApplicationTests` |
+| | `TicketStateMachineTest` |
+| | `SlaPolicyTest` |
+| | `AuthControllerIntegrationTest` |
+| | `FullLifecycleIntegrationTest` |
+| | `TicketSecurityIntegrationTest` |
+
+```text
+Tests run: 75, Failures: 0, Errors: 0, Skipped: 0
+```
+
+### Cobertura de código (JaCoCo)
+
+| Módulo | Líneas | Ramas | Métodos | Clases |
 | :--- | :---: | :---: | :---: | :---: |
-| **`support-ticket-service`** | **81.7%** | 62.5% | **83.8%** | **97.7%** |
-| **`technician-dispatch-service`** | **81.7%** | **91.7%** | **87.5%** | **100.0%** |
-| **Required Minimum** | $\ge 80\%$ | $\ge 60\%$ | $\ge 80\%$ | $\ge 90\%$ |
+| `support-ticket-service` | 81,7 % | 62,5 % | 83,8 % | 97,7 % |
+| `technician-dispatch-service` | 81,7 % | 91,7 % | 87,5 % | 100,0 % |
+| **Umbral mínimo** | ≥ 80 % | ≥ 60 % | ≥ 80 % | ≥ 90 % |
 
 ---
 
-## 12. Postman Test Collection
+## 12. Colección de Postman
 
-The complete Postman collection is included at [`HelpFlow_API.postman_collection.json`](./HelpFlow_API.postman_collection.json).
+En la raíz del proyecto se incluye la colección [`HelpFlow_API.postman_collection.json`](./HelpFlow_API.postman_collection.json).
 
-1. Import `HelpFlow_API.postman_collection.json` in Postman.
-2. Run **`Login Admin`** in `1. Authentication` (automatically populates `{{adminToken}}`).
-3. Execute the lifecycle and management requests in order.
+1. En Postman, selecciona **Import** y elige el archivo `HelpFlow_API.postman_collection.json`.
+2. La colección trae configuradas las variables `baseUrl` (`http://localhost:8080`) y `dispatchUrl` (`http://localhost:8081`).
+3. Ejecuta primero la petición **Login Admin**: su script guarda automáticamente el JWT en `{{adminToken}}` y `{{token}}`.
+4. Las peticiones de las carpetas *User Management*, *Technician Management* y *Ticket Lifecycle* usan ese token y actualizan variables como `{{ticketId}}` y `{{userId}}` a medida que se ejecutan.
 
 ---
 
-## 13. Verified Execution Evidence
+## 13. Evidencia de ejecución
 
-- **Database Migrations:** Flyway applied `V1__schema.sql`, `V2__assignments_history_sla.sql`, and `V3__initial_data.sql` successfully on startup.
-- **Seed Data:** 20 technicians and default users seeded and verified.
-- **Auto-Dispatch:** Ticket creation requests sent to `/tickets` synchronously invoke `technician-dispatch-service` (8081) and allocate technicians deterministically.
-- **Traceability:** Distributed trace correlation via MDC header `X-Trace-Id`.
-- **Zero Mock Policy on Persistence:** End-to-end integration tests execute against real PostgreSQL instances via Testcontainers.
+- **Migraciones:** Flyway aplica correctamente `V1__schema.sql`, `V2__assignments_history_sla.sql` y `V3__initial_data.sql` al iniciar el contenedor.
+- **Datos iniciales:** se cargan 20 técnicos distribuidos en las especialidades `HARDWARE`, `SOFTWARE`, `NETWORK`, `SECURITY` y `DATABASE`.
+- **Asignación automática:** al crear un ticket, `TechnicianDispatchRestClientAdapter` consulta el servicio de despacho de forma síncrona, asigna un técnico compatible y el ticket pasa a `ASSIGNED` con su registro inicial de auditoría.
+- **Trazabilidad:** los errores RFC 7807 y todos los logs incluyen el `traceId` de la petición.
+- **Pruebas sin mocks de persistencia:** todas las pruebas de integración se ejecutan contra instancias reales de PostgreSQL mediante Testcontainers.
