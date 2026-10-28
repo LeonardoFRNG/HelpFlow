@@ -17,6 +17,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
+// Maneja accesos no autenticados (401) generando un ProblemDetail con traceId
 @Component
 public class DelegatedAuthenticationEntryPoint implements AuthenticationEntryPoint {
 

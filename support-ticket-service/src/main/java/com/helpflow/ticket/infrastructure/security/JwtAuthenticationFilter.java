@@ -17,6 +17,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.util.Collections;
 
+// Intercepta cada peticion HTTP para extraer y validar el Bearer token
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
@@ -41,6 +42,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 String username = tokenProvider.extractUsername(jwt);
                 Role role = tokenProvider.extractRole(jwt);
 
+                // Carga la identidad y rol en el contexto si aun no esta autenticado en este hilo
                 if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                     SimpleGrantedAuthority authority = new SimpleGrantedAuthority(role.name());
                     UsernamePasswordAuthenticationToken authentication =

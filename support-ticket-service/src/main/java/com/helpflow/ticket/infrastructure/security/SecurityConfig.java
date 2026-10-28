@@ -11,6 +11,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
+// Configuracion principal de seguridad: API stateless con autenticacion basada en JWT
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
@@ -34,13 +35,16 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
+                // Deshabilitamos CSRF ya que el cliente consume una API REST stateless sin cookies de sesion
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                // Respuestas 401 y 403 formateadas bajo el estandar RFC 7807 (ProblemDetail)
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint(authenticationEntryPoint)
                         .accessDeniedHandler(accessDeniedHandler)
                 )
                 .authorizeHttpRequests(auth -> auth
+                        // Endpoints publicos para login, registro, swagger y endpoints de salud
                         .requestMatchers(
                                 "/auth/**",
                                 "/v3/api-docs/**",
@@ -54,6 +58,7 @@ public class SecurityConfig {
                         .requestMatchers("/admin/**").hasAuthority("ROLE_ADMIN")
                         .anyRequest().authenticated()
                 )
+                // Interceptamos y validamos el JWT antes del filtro por defecto de Spring
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

@@ -5,6 +5,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
+// Implementa el puerto PasswordEncoderPort desacoplando el hash de Spring Security
 @Component
 public class BCryptPasswordEncoderAdapter implements PasswordEncoderPort {
 

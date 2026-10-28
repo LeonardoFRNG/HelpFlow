@@ -17,6 +17,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
+// Maneja accesos denegados por rol insuficiente (403) bajo el formato RFC 7807
 @Component
 public class DelegatedAccessDeniedHandler implements AccessDeniedHandler {
 

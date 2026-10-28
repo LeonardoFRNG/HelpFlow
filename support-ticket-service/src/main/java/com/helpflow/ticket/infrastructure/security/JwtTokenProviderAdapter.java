@@ -17,6 +17,7 @@ import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
 
+// Adaptador que implementa el puerto TokenProviderPort usando JJWT (HMAC-SHA)
 @Component
 public class JwtTokenProviderAdapter implements TokenProviderPort {
 
@@ -38,6 +39,7 @@ public class JwtTokenProviderAdapter implements TokenProviderPort {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + expirationMs);
 
+        // Claims principales para autorizacion rapida sin consultar BD en cada request
         return Jwts.builder()
                 .subject(user.getCorporateEmail())
                 .claim("role", user.getRole().name())
