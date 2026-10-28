@@ -19,14 +19,14 @@ public class TechnicianDispatchService {
 
         long seed = calculateSeed(request.ticketId(), normalizedCategory, normalizedPriority);
 
-        // Deterministic technician selection (TEC-001 to TEC-020)
+
         int techIndex = (int) (Math.floorMod(seed, MAX_TECHNICIANS) + 1);
         String technicianCode = String.format("TEC-%03d", techIndex);
 
-        // Deterministic estimated hours based on priority and seed
+
         int estimatedHours = calculateEstimatedHours(normalizedPriority, seed);
 
-        // Availability classification
+
         String availabilityEn;
         String availabilityEs;
         if (estimatedHours <= 2) {

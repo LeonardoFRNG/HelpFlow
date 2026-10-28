@@ -51,7 +51,7 @@ public class AuthApplicationService implements AuthenticationUseCase {
     @Override
     @Transactional
     public AuthResult register(UserManagementUseCase.RegisterUserCommand command) {
-        // Enforce least privilege on public registration: default to ROLE_USUARIO
+
         Role role = command.role() == Role.ROLE_ADMIN ? Role.ROLE_USUARIO : (command.role() != null ? command.role() : Role.ROLE_USUARIO);
 
         UserManagementUseCase.RegisterUserCommand safeCommand = new UserManagementUseCase.RegisterUserCommand(

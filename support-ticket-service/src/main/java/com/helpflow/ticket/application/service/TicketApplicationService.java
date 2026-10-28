@@ -97,7 +97,7 @@ public class TicketApplicationService implements
                 now
         );
 
-        // Save initial ticket in OPEN state
+
         ticket = ticketRepository.save(ticket);
         log.info("Ticket created with ID {} in OPEN state for user {}", ticket.getId(), user.getCorporateEmail());
 
@@ -105,7 +105,7 @@ public class TicketApplicationService implements
             metrics.recordTicketCreated(ticket.getCategory(), ticket.getPriority());
         }
 
-        // Consult external technician dispatch service
+
         try {
             DispatchResult dispatchResult = dispatchPort.dispatch(ticket.getId(), ticket.getCategory(), ticket.getPriority());
             if (dispatchResult != null && dispatchResult.technicianId() != null) {
@@ -207,7 +207,7 @@ public class TicketApplicationService implements
 
         validateAccess(ticket, command.updatedByEmail(), command.updatedByRole());
 
-        // Technician can only update tickets assigned to them
+
         if (command.updatedByRole() == Role.ROLE_TECNICO) {
             Technician tech = technicianRepository.findAll().stream()
                     .filter(t -> command.updatedByEmail().equalsIgnoreCase(t.getEmail()))

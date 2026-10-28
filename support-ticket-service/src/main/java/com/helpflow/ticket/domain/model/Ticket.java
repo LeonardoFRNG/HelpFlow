@@ -152,7 +152,7 @@ public class Ticket {
         LocalDateTime timestamp = now != null ? now : LocalDateTime.now();
         TicketStatus prev = this.status;
 
-        // Apply domain invariants for specific statuses
+
         if (targetStatus == TicketStatus.IN_PROGRESS) {
             if (this.assignedTechnicianId == null) {
                 throw new BusinessRuleException("Cannot move ticket to IN_PROGRESS without an assigned technician");
@@ -228,7 +228,7 @@ public class Ticket {
         return checkTime.plusMinutes(thresholdMinutes).isAfter(this.slaDeadline);
     }
 
-    // Getters and Setters
+
     public Long getId() {
         return id;
     }

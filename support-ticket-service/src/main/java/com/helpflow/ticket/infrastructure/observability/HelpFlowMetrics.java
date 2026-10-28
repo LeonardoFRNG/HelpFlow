@@ -40,7 +40,7 @@ public class HelpFlowMetrics {
                 .description("Time taken from ticket creation to resolution")
                 .register(meterRegistry);
 
-        // Overdue tickets gauge
+
         Gauge.builder("helpflow.tickets.overdue", () -> {
             try {
                 return ticketRepository.findOverdueTickets(LocalDateTime.now()).size();

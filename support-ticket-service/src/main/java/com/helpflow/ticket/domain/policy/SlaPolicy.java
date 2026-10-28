@@ -10,11 +10,6 @@ public class SlaPolicy {
     private final Map<Priority, Duration> slaDurations = new EnumMap<>(Priority.class);
 
     public SlaPolicy() {
-        // Default business SLA standards:
-        // CRITICAL: 2 hours
-        // HIGH: 4 hours
-        // MEDIUM: 8 hours
-        // LOW: 24 hours
         slaDurations.put(Priority.CRITICAL, Duration.ofHours(2));
         slaDurations.put(Priority.HIGH, Duration.ofHours(4));
         slaDurations.put(Priority.MEDIUM, Duration.ofHours(8));

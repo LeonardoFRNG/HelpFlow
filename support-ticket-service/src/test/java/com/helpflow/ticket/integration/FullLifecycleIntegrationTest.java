@@ -62,7 +62,7 @@ class FullLifecycleIntegrationTest {
     @Test
     @DisplayName("Complete E2E: Register -> Login -> Create Ticket -> Auto Assign -> In Progress -> Resolve -> Close")
     void testEndToEndLifecycle() throws Exception {
-        // 1. Register User
+        // register
         String registerJson = """
             {
               "document": "DOC-E2E-001",
@@ -79,7 +79,7 @@ class FullLifecycleIntegrationTest {
                         .content(registerJson))
                 .andExpect(status().isCreated());
 
-        // 2. Login
+        // authenticate
         String loginJson = """
             {
               "email": "e2e.user@helpflow.com",
@@ -112,11 +112,9 @@ class FullLifecycleIntegrationTest {
 
         String adminToken = objectMapper.readTree(adminLoginResult.getResponse().getContentAsString()).get("token").asText();
 
-        // 3. Mock dispatch response
         when(dispatchPort.dispatch(any(), eq(Category.HARDWARE), eq(Priority.HIGH)))
                 .thenReturn(new DispatchResult(1L, "TEC-001", Availability.HIGH, 2));
 
-        // 4. Create Ticket
         String createTicketJson = """
             {
               "title": "Broken Laptop Screen",
@@ -141,7 +139,7 @@ class FullLifecycleIntegrationTest {
 
         Long ticketId = objectMapper.readTree(createResult.getResponse().getContentAsString()).get("id").asLong();
 
-        // 5. Technician transitions to IN_PROGRESS (Using admin token to act on behalf or admin update)
+        // start progress
         String toInProgressJson = """
             {
               "status": "IN_PROGRESS",
@@ -157,7 +155,7 @@ class FullLifecycleIntegrationTest {
                 .andExpect(jsonPath("$.status").value("IN_PROGRESS"))
                 .andExpect(jsonPath("$.firstResponseAt").isNotEmpty());
 
-        // 6. Technician transitions to RESOLVED
+        // resolve
         String toResolvedJson = """
             {
               "status": "RESOLVED",
@@ -173,7 +171,7 @@ class FullLifecycleIntegrationTest {
                 .andExpect(jsonPath("$.status").value("RESOLVED"))
                 .andExpect(jsonPath("$.resolvedAt").isNotEmpty());
 
-        // 7. User closes ticket
+        // close
         String toClosedJson = """
             {
               "status": "CLOSED",
@@ -189,7 +187,7 @@ class FullLifecycleIntegrationTest {
                 .andExpect(jsonPath("$.status").value("CLOSED"))
                 .andExpect(jsonPath("$.closedAt").isNotEmpty());
 
-        // 8. Verify invalid transition from CLOSED throws 409 Conflict ProblemDetail
+        // invalid transition attempt
         String invalidTransitionJson = """
             {
               "status": "IN_PROGRESS",
@@ -205,7 +203,7 @@ class FullLifecycleIntegrationTest {
                 .andExpect(jsonPath("$.title").value("Invalid State Transition"))
                 .andExpect(jsonPath("$.status").value(409));
 
-        // 9. Verify ticket details
+        // verify
         MvcResult finalResult = mockMvc.perform(get("/tickets/" + ticketId)
                         .header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isOk())
