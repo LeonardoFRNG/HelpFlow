@@ -31,7 +31,7 @@ Esta guía ha sido diseñada para darte **absoluta seguridad técnica** durante 
 > 1. **`support-ticket-service` (Puerto 8080):** El núcleo del sistema que orquesta el ciclo de vida del ticket, calcula y escala SLAs automáticamente, gestiona usuarios y técnicos con seguridad JWT sin estado y persiste auditorías completas en PostgreSQL con Flyway.
 > 2. **`technician-dispatch-service` (Puerto 8081):** Un microservicio autónomo y determinista que simula la asignación y disponibilidad técnica sin sobrecarga de bases de datos.
 > 
-> El proyecto cuenta con **75 pruebas automatizadas pasando con 0 fallos**, cobertura JaCoCo superior al **81.7%**, pruebas de integración con PostgreSQL real mediante **Testcontainers**, y despliegue orquestado con **Docker Compose** listo para producción."
+> El proyecto cuenta con **85 pruebas automatizadas pasando con 0 fallos**, cobertura JaCoCo superior al **82%**, pruebas de integración con PostgreSQL real mediante **Testcontainers**, y despliegue orquestado con **Docker Compose** listo para producción."
 
 ---
 
@@ -183,10 +183,20 @@ No usamos `ddl-auto=update` porque en ambientes corporativos destruye o bloquea 
 
 ---
 
-## 8. SEGURIDAD JWT Y CONTROL DE ACCESO (RBAC)
+## 8. SEGURIDAD JWT, REFRESH TOKENS Y CONTROL DE ACCESO (RBAC)
 
 - **Filtro Stateless:** Spring Security configurado con `SessionCreationPolicy.STATELESS`. El servidor no guarda sesiones en memoria RAM.
-- **Tokens JWT:** Firmados con clave secreta mediante algoritmo **HMAC-SHA512/256**. Expiración de 24 horas (`86400000 ms`).
+- **Tokens de Acceso (Access Token):** Firmados con HMAC-SHA512. Tienen una vigencia corta (15 minutos por defecto, configurable mediante `jwt.access-token-expiration-ms`) e incluyen claims estándar RFC 7519 (`jti` único por token, `sub`, `role`, `name`, `userId`).
+- **Mecanismo de Refresh Token y Rotación (RTR):**
+  - **Generación criptográfica:** Se generan con `SecureRandom` con 32 bytes de entropía en Base64 URL-safe (longitud de 43 caracteres).
+  - **Almacenamiento seguro (Hashing SHA-256):** Nunca se guarda el Refresh Token en texto plano en la base de datos. Solo se persiste su hash criptográfico SHA-256 en la tabla `refresh_tokens`.
+  - **Rotación estricta de tokens (RTR):** En cada petición a `POST /auth/refresh`, el token actual se marca como revocado (`revoked = true`, `replaced_by_token_hash = <nuevo_hash>`) y se entrega un par completamente nuevo (nuevo Access Token y nuevo Refresh Token).
+  - **Detección de ataques de repetición / Replay Attacks:** Si un atacante roba un Refresh Token ya consumido e intenta renovarlo, el sistema detecta que `isRevoked() == true` y, mediante una transacción independiente (`Propagation.REQUIRES_NEW`), **invalida y revoca inmediatamente todas las sesiones activas del usuario afectado** (`revokeAllByUserId`), mitigando cualquier acceso no autorizado posterior.
+  - **Cierre de Sesión (`POST /auth/logout`):** Permite revocar voluntariamente el token persistente del usuario, invalidándolo de forma definitiva.
+  - **Arquitectura Hexagonal Pura:**
+    - Modelo puro: `com.helpflow.ticket.domain.model.RefreshToken` (POJO con lógica de invariantes `isExpired`, `isActive`, `revoke`, `replaceBy`).
+    - Puertos: `RefreshTokenRepositoryPort` y `TokenProviderPort`.
+    - Adaptadores: `RefreshTokenPersistenceAdapter` (con `@Transactional(propagation = Propagation.REQUIRES_NEW)`) y `JwtTokenProviderAdapter`.
 - **Cifrado de Contraseñas:** Algoritmo **BCrypt** con 10 rondas de salt.
 - **Validación de Dominio Corporativo:** La expresión regular `^[A-Za-z0-9._%+-]+@helpflow\.com$` asegura que solo personas con correo corporativo puedan registrarse. Correos externos (`@gmail.com`) devuelven `400 Bad Request`.
 - **Formato Estándar de Errores (RFC 7807):** Toda excepción (validación, 401, 403, regla de negocio) es capturada por `@RestControllerAdvice` y devuelta como un JSON `ProblemDetail` que incluye: `type`, `title`, `status`, `detail`, `instance`, `timestamp` y `traceId`.
@@ -217,7 +227,7 @@ No usamos `ddl-auto=update` porque en ambientes corporativos destruye o bloquea 
 - **Pruebas de Integración con Testcontainers (`integration`):**
   - **Cero Mocks en Persistencia:** Levantamos un contenedor Docker real de PostgreSQL 16 durante los tests (`PostgresDatabaseTestcontainersTest`, `FullLifecycleIntegrationTest`).
   - Flyway ejecuta las migraciones reales contra ese PostgreSQL en Docker y se prueban transacciones, queries con `@EntityGraph`, triggers y restricciones de unicidad reales.
-- **Resultados:** 75 tests ejecutados, 0 fallos, 0 errores, cobertura JaCoCo **>81.7%**.
+- **Resultados:** 85 tests ejecutados, 0 fallos, 0 errores, cobertura JaCoCo **>82%** (incluyendo suites completas de rotación, expiración, reutilización de tokens y logout en Testcontainers).
 
 ---
 
@@ -248,11 +258,21 @@ No usamos `ddl-auto=update` porque en ambientes corporativos destruye o bloquea 
 > 1. En `SpringDataTicketRepository` utilizamos anotaciones `@EntityGraph(attributePaths = {"user", "technician"})` y consultas `JOIN FETCH` explícitas, forzando a que la consulta SQL traiga las relaciones en un solo viaje a la base de datos.
 > 2. Las colecciones `@OneToMany` dentro de `TicketJpaEntity` (`assignments` e `histories`) se modelaron utilizando `Set` (`LinkedHashSet`) en lugar de `List`, evitando el error `MultipleBagFetchException` de Hibernate y optimizando el uso de memoria."
 
-### P6: "¿Por qué el token JWT tiene una duración de 24 horas y cómo se manejaría en un entorno productivo real?"
+### P6: "¿Cómo está estructurado el tiempo de vida de los tokens de autenticación?"
 **Respuesta:**  
-> "Para efectos de esta prueba técnica y de la sustentación, configuramos una caducidad de 24 horas en la propiedad `jwt.expiration-ms` para facilitar la evaluación fluida y continua sin que las sesiones de Swagger o Postman expiren prematuramente. Sin embargo, en un entorno de producción real según las normas de OWASP, los Access Tokens deben tener una vida corta de entre 15 y 30 minutos, complementándose con un mecanismo de Refresh Tokens revocables almacenados en cookies seguras `HttpOnly`."
+> "Seguimos las recomendaciones de seguridad de OWASP y RFC 6749:
+> 1. **Access Token de corta duración (15 minutos):** Minimiza la ventana de exposición en caso de intercepción en red o robo en el cliente.
+> 2. **Refresh Token de larga duración (7 días):** Permite al cliente renovar su sesión silenciosamente sin obligar al usuario a reintroducir sus credenciales constantemente.
+> Además, los tiempos son parametrizables externamente mediante variables de entorno (`JWT_ACCESS_EXPIRATION_MS` y `JWT_REFRESH_EXPIRATION_MS`)."
 
-### P7: "¿Cómo se maneja la seguridad para que un técnico no modifique un ticket que no le corresponde?"
+### P7: "¿Cómo funciona la detección de reuso (Replay Attacks) en el Refresh Token y por qué es segura?"
+**Respuesta:**  
+> "Implementamos **Refresh Token Rotation (RTR)** junto con detección de brecha de seguridad:
+> 1. Cada vez que un Refresh Token es utilizado, se marca como revocado (`revoked = true`) y se asocia el hash del token que lo reemplazó (`replaced_by_token_hash`).
+> 2. Si un atacante interceptó un token previamente consumido e intenta usarlo para obtener un nuevo Access Token, el sistema detecta que el token ya estaba revocado.
+> 3. En ese instante, asume un posible compromiso de las credenciales y, mediante una transacción inmediata con `Propagation.REQUIRES_NEW`, **revoca todos los Refresh Tokens activos de ese usuario** (`revokeAllByUserId`) y rechaza la petición con HTTP 400. Esto expulsa automáticamente al atacante y protege la cuenta del usuario."
+
+### P8: "¿Cómo se maneja la seguridad para que un técnico no modifique un ticket que no le corresponde?"
 **Respuesta:**  
 > "Implementamos seguridad en dos niveles:
 > 1. **Nivel de Endpoint:** Spring Security valida el rol (`ROLE_TECNICO`, `ROLE_ADMIN`, `ROLE_USUARIO`).
@@ -276,16 +296,34 @@ curl http://localhost:8080/actuator/health
 curl http://localhost:8081/actuator/health
 ```
 
-### 3. Ejecutar los 75 tests y validar cobertura en vivo:
+### 3. Ejecutar los 85 tests y validar cobertura en vivo:
 ```bash
 mvn test
 ```
 
-### 4. Abrir la documentación interactiva:
+### 4. Probar en vivo el flujo de Refresh Token y Logout con cURL:
+```bash
+# A. Login obteniendo Access Token y Refresh Token:
+curl -s -X POST http://localhost:8080/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@helpflow.com","password":"Password123!"}'
+
+# B. Renovar tokens (Refresh Token Rotation):
+curl -s -X POST http://localhost:8080/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{"refreshToken":"<REFRESH_TOKEN_OBTENIDO>"}'
+
+# C. Cerrar sesión de forma segura:
+curl -s -X POST http://localhost:8080/auth/logout \
+  -H "Content-Type: application/json" \
+  -d '{"refreshToken":"<REFRESH_TOKEN_ACTUAL>"}'
+```
+
+### 5. Abrir la documentación interactiva:
 - **Swagger UI:** `http://localhost:8080/swagger-ui/index.html`
 - **Métricas Micrometer:** `http://localhost:8080/actuator/metrics`
 
-### 5. Cuentas de Acceso Preconfiguradas:
+### 6. Cuentas de Acceso Preconfiguradas:
 | Rol | Email | Password |
 | :--- | :--- | :--- |
 | **Administrador** | `admin@helpflow.com` | `Password123!` |

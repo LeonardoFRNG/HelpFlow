@@ -5,8 +5,8 @@
 [![Arquitectura](https://img.shields.io/badge/Arquitectura-Hexagonal-blue.svg)]()
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue.svg)](https://www.postgresql.org/)
 [![Docker](https://img.shields.io/badge/Docker%20Compose-listo-blue.svg)](https://www.docker.com/)
-[![Pruebas](https://img.shields.io/badge/Pruebas-75%20exitosas-success.svg)]()
-[![Cobertura](https://img.shields.io/badge/Cobertura%20JaCoCo-81%25-success.svg)]()
+[![Pruebas](https://img.shields.io/badge/Pruebas-85%20exitosas-success.svg)]()
+[![Cobertura](https://img.shields.io/badge/Cobertura%20JaCoCo-82%25-success.svg)]()
 
 **HelpFlow** es una plataforma distribuida para la gestión de incidencias de soporte TI. Está construida siguiendo los principios de **Arquitectura Hexagonal (Puertos y Adaptadores)** y **Diseño Guiado por el Dominio (DDD)**, y se compone de dos microservicios independientes.
 
@@ -301,8 +301,10 @@ La documentación interactiva está disponible en Swagger UI: `http://localhost:
 
 | Método | Endpoint | Acceso | Descripción |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/auth/register` | Público | Registra un usuario con rol `ROLE_USUARIO`. Exige un correo corporativo `@helpflow.com`. |
-| `POST` | `/auth/login` | Público | Autentica al usuario y devuelve un token JWT. |
+| `POST` | `/auth/register` | Público | Registra un usuario con rol `ROLE_USUARIO`. Exige un correo corporativo `@helpflow.com`. Devuelve token de acceso y refresh token. |
+| `POST` | `/auth/login` | Público | Autentica al usuario y devuelve un Access Token JWT (15 min) y un Refresh Token (7 días). |
+| `POST` | `/auth/refresh` | Público | Rota el Refresh Token: emite un nuevo par de tokens invalidando el token anterior. Incluye detección de reuso/repetición. |
+| `POST` | `/auth/logout` | Público | Revoca el Refresh Token actual, cerrando la sesión persistente de forma segura. |
 
 ### Usuarios
 

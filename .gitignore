@@ -34,8 +34,8 @@ test-containers-*.log
 .project
 .classpath
 .settings/
-bin/
-out/
+/bin/
+/out/
 
 # 5. OS Generated Files
 .DS_Store

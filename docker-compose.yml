@@ -50,7 +50,9 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-helpflow_secret}
       DISPATCH_SERVICE_URL: http://technician-dispatch-service:8081
       JWT_SECRET: ${JWT_SECRET:-helpflow-super-secret-jwt-signing-key-for-production-grade-security-at-least-256-bits!}
-      JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-86400000}
+      JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-900000}
+      JWT_ACCESS_EXPIRATION_MS: ${JWT_ACCESS_EXPIRATION_MS:-900000}
+      JWT_REFRESH_EXPIRATION_MS: ${JWT_REFRESH_EXPIRATION_MS:-604800000}
       SLA_CHECK_CRON: ${SLA_CHECK_CRON:-0 */5 * * * *}
       SLA_THRESHOLD_MINUTES: ${SLA_THRESHOLD_MINUTES:-30}
     depends_on:

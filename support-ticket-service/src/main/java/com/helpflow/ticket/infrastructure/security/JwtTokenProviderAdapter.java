@@ -15,6 +15,10 @@ import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.util.Base64;
 import java.util.Date;
 
 // Adaptador que implementa el puerto TokenProviderPort usando JJWT (HMAC-SHA)
@@ -25,13 +29,22 @@ public class JwtTokenProviderAdapter implements TokenProviderPort {
 
     private final SecretKey secretKey;
     private final long expirationMs;
+    private final long refreshTokenExpirationMs;
+    private final SecureRandom secureRandom = new SecureRandom();
 
+    @org.springframework.beans.factory.annotation.Autowired
     public JwtTokenProviderAdapter(
             @Value("${jwt.secret:helpflow-super-secret-jwt-signing-key-for-production-grade-security-at-least-256-bits!}") String secret,
-            @Value("${jwt.expiration-ms:86400000}") long expirationMs) {
+            @Value("${jwt.access-token-expiration-ms:${jwt.expiration-ms:900000}}") long expirationMs,
+            @Value("${jwt.refresh-token-expiration-ms:604800000}") long refreshTokenExpirationMs) {
         byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
         this.secretKey = Keys.hmacShaKeyFor(keyBytes);
         this.expirationMs = expirationMs;
+        this.refreshTokenExpirationMs = refreshTokenExpirationMs;
+    }
+
+    public JwtTokenProviderAdapter(String secret, long expirationMs) {
+        this(secret, expirationMs, 604800000L);
     }
 
     @Override
@@ -41,6 +54,7 @@ public class JwtTokenProviderAdapter implements TokenProviderPort {
 
         // Claims principales para autorizacion rapida sin consultar BD en cada request
         return Jwts.builder()
+                .id(java.util.UUID.randomUUID().toString())
                 .subject(user.getCorporateEmail())
                 .claim("role", user.getRole().name())
                 .claim("name", user.getName())
@@ -91,6 +105,40 @@ public class JwtTokenProviderAdapter implements TokenProviderPort {
             return claims.get("userId", Long.class);
         }
         return null;
+    }
+
+    @Override
+    public String generateRefreshToken() {
+        byte[] randomBytes = new byte[32];
+        secureRandom.nextBytes(randomBytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes);
+    }
+
+    @Override
+    public String hashToken(String rawToken) {
+        if (rawToken == null) {
+            return null;
+        }
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(rawToken.trim().getBytes(StandardCharsets.UTF_8));
+            StringBuilder hexString = new StringBuilder();
+            for (byte b : hash) {
+                String hex = Integer.toHexString(0xff & b);
+                if (hex.length() == 1) {
+                    hexString.append('0');
+                }
+                hexString.append(hex);
+            }
+            return hexString.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 algorithm not available in runtime", e);
+        }
+    }
+
+    @Override
+    public long getRefreshTokenExpirationMs() {
+        return refreshTokenExpirationMs;
     }
 
     private Claims extractAllClaims(String token) {

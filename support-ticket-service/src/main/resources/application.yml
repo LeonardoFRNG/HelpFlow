@@ -31,7 +31,9 @@ dispatch:
 
 jwt:
   secret: ${JWT_SECRET:helpflow-super-secret-jwt-signing-key-for-production-grade-security-at-least-256-bits!}
-  expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+  access-token-expiration-ms: ${JWT_ACCESS_EXPIRATION_MS:900000}
+  refresh-token-expiration-ms: ${JWT_REFRESH_EXPIRATION_MS:604800000}
+  expiration-ms: ${JWT_EXPIRATION_MS:900000}
 
 sla:
   check:
